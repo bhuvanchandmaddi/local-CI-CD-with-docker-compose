@@ -1,0 +1,36 @@
+# Dockerfile for custom Docker-in-Docker (dind) image with user and SSH key
+
+# Use the official docker:dind image as the base
+FROM docker:dind
+RUN adduser -D jenkins
+
+
+# Create a non-root user named "myuser" with UID 1000 (you can change the username and UID if needed)
+# Set appropriate permissions on the .ssh directory and authorized_keys file
+RUN mkdir -p /home/jenkins/.ssh 
+
+# Copy the SSH public key to the user's authorized_keys file
+# The authorized_keys file should be created inside the user's home directory
+COPY ./utilities/ssh-keys/ansible-user-key.pub /home/jenkins/.ssh/authorized_keys
+
+RUN chmod 700 /home/jenkins/.ssh && \
+    chmod 600 /home/jenkins/.ssh/authorized_keys && \
+    echo 'root:root' | chpasswd && \
+    echo "jenkins:jenkins" | chpasswd
+
+
+# Install SSH server and configure it
+RUN apk update && \
+    apk upgrade && \
+    apk add openssh-server && \
+    ssh-keygen -A
+
+# Install OpenJDK 11
+RUN apk add openjdk11
+
+# Set the JAVA_HOME environment variable (optional but recommended)
+ENV JAVA_HOME /usr/lib/jvm/java-11-openjdk
+
+# Set the default command for the container
+CMD ["/usr/sbin/sshd", "-D"]
+
