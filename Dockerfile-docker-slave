@@ -1,16 +1,23 @@
 # Dockerfile for custom Docker-in-Docker (dind) image with user and SSH key
+ARG DOCKER_GID=999
 
 # Use the official docker:dind image as the base
 FROM docker:dind
+
+# Create a non-root user named "jenkins" 
 RUN adduser -D jenkins
 
+# very very importanet it took me 2 hours to dubug this
+# see the group if of the docker on ythe host name
+# add the henkins user to the same group id in docker container
+# if already a group exists with same group if then blindly add jenkins user to that group
+# in this case there is a ping group with id 999(This is group id on host machine). I`ve added this jenkins user to that group
+RUN adduser jenkins ping 
 
-# Create a non-root user named "myuser" with UID 1000 (you can change the username and UID if needed)
 # Set appropriate permissions on the .ssh directory and authorized_keys file
 RUN mkdir -p /home/jenkins/.ssh 
 
 # Copy the SSH public key to the user's authorized_keys file
-# The authorized_keys file should be created inside the user's home directory
 COPY ./utilities/ssh-keys/ansible-user-key.pub /home/jenkins/.ssh/authorized_keys
 
 RUN chmod 700 /home/jenkins/.ssh && \
@@ -18,19 +25,15 @@ RUN chmod 700 /home/jenkins/.ssh && \
     echo 'root:root' | chpasswd && \
     echo "jenkins:jenkins" | chpasswd
 
-
-# Install SSH server and configure it
+# Install SSH server, git, OpenJDK 11, wget, and tar
 RUN apk update && \
     apk upgrade && \
-    apk add openssh-server && \
-    ssh-keygen -A
+    apk add git openssh-server openjdk17 wget tar && \
+    ssh-keygen -A && \
+    apk add maven
 
-# Install OpenJDK 11
-RUN apk add openjdk11
-
-# Set the JAVA_HOME environment variable (optional but recommended)
-ENV JAVA_HOME /usr/lib/jvm/java-11-openjdk
+# Set the JAVA_HOME environment variable
+ENV JAVA_HOME /usr/lib/jvm/java-17-openjdk
 
 # Set the default command for the container
 CMD ["/usr/sbin/sshd", "-D"]
-
