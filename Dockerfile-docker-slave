@@ -35,8 +35,8 @@ ARG DOCKER_GID=999
 ENV DOCKER_GID ${DOCKER_GID}
 
 # Script to create Docker group with given GID and add jenkins user to it
-COPY set-docker-group.sh /usr/local/bin/
-RUN chmod +x /usr/local/bin/set_docker_group.sh
+COPY ./utilities/set-docker-group.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/set-docker-group.sh
 
 # Run the script to adjust group settings
 RUN /usr/local/bin/set-docker-group.sh

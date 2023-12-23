@@ -1,51 +1,60 @@
+# Use CentOS 7 as base image
 FROM centos:7
 
-# Set environment variables
-# Java home is optional but maven home is required
-ENV JAVA_HOME /usr/lib/jvm/java-11-openjdk
-ENV MAVEN_HOME /usr/share/maven
-ENV PATH ${PATH}:${JAVA_HOME}/bin:${MAVEN_HOME}/bin
-
+# Install utilities and update system
 RUN yum update -y && \
-# Install utilities
-    yum install curl wget nano git openssh-server -y  && \
-    useradd remote_user && \
+    yum install -y curl wget nano git openssh-server java-11-openjdk-devel && \
+    yum clean all && \
+    rm -rf /var/cache/yum
+
+# Set environment variables for Java
+ENV JAVA_HOME /usr/lib/jvm/java-11-openjdk
+
+# Optionally, determine the latest Maven version dynamically
+# Set a default Maven version (can be overridden during build)
+ARG MAVEN_VERSION=3.8.4
+RUN LATEST_MAVEN_VERSION=$(curl -s "https://maven.apache.org/download.cgi" | grep -oP 'apache-maven-\K[0-9.]+(?=-bin.tar.gz)' | head -1) && \
+    MAVEN_VERSION=${LATEST_MAVEN_VERSION:-$MAVEN_VERSION} && \
+    cd /tmp && \
+    wget "https://dlcdn.apache.org/maven/maven-3/${MAVEN_VERSION}/binaries/apache-maven-${MAVEN_VERSION}-bin.tar.gz" && \
+    tar -xzf "apache-maven-${MAVEN_VERSION}-bin.tar.gz" && \
+    mv "apache-maven-${MAVEN_VERSION}" /usr/share/maven && \
+    rm -f "apache-maven-${MAVEN_VERSION}-bin.tar.gz"
+
+# Create remote_user and configure SSH access
+RUN useradd remote_user && \
     echo "password" | passwd remote_user --stdin && \
     mkdir /home/remote_user/.ssh && \
-    chmod 700 /home/remote_user/.ssh 
+    chmod 700 /home/remote_user/.ssh
 COPY ./utilities/ssh-keys/ansible-user-key.pub /home/remote_user/.ssh/authorized_keys
 RUN chown remote_user:remote_user -R /home/remote_user/.ssh && \
-    chmod 600 /home/remote_user/.ssh/authorized_keys && \
-    /usr/bin/ssh-keygen -A 
+    chmod 600 /home/remote_user/.ssh/authorized_keys
 
-# Install maven, It is good idea to combine all statements into single layer single run but for ease of reading I am creating another layer
-RUN yum install java-11-openjdk-devel -y && \
-    cd /tmp && \
-    wget https://dlcdn.apache.org/maven/maven-3/3.9.3/binaries/apache-maven-3.9.3-bin.tar.gz && \
-    tar -xzf apache-maven-3.9.3-bin.tar.gz && \
-    mv apache-maven-3.9.3 /usr/share/maven && \
-    rm -f apache-maven-3.9.3-bin.tar.gz
+# Generate SSH keys for the SSH server
+RUN /usr/bin/ssh-keygen -A 
 
 # Create the Jenkins user
 RUN useradd -m -d /home/jenkins -s /bin/bash jenkins 
 
-# Set up SSH
-RUN mkdir /var/run/sshd
-RUN echo "jenkins:jenkins" | chpasswd
-RUN sed -i 's/#PermitRootLogin yes/PermitRootLogin yes/' /etc/ssh/sshd_config
-
-# Add SSH public key for Jenkins user
-RUN mkdir /home/jenkins/.ssh
-RUN chown jenkins:jenkins /home/jenkins/.ssh
-RUN chmod 700 /home/jenkins/.ssh
+# Configure SSH for Jenkins user
+RUN mkdir /home/jenkins/.ssh && \
+    chown jenkins:jenkins /home/jenkins/.ssh && \
+    chmod 700 /home/jenkins/.ssh && \
+    echo "jenkins:jenkins" | chpasswd && \
+    sed -i 's/#PermitRootLogin yes/PermitRootLogin yes/' /etc/ssh/sshd_config
 COPY ./utilities/ssh-keys/ansible-user-key.pub /home/jenkins/.ssh/authorized_keys
-RUN chown jenkins:jenkins /home/jenkins/.ssh/authorized_keys
-RUN chmod 600 /home/jenkins/.ssh/authorized_keys
+RUN chown jenkins:jenkins /home/jenkins/.ssh/authorized_keys && \
+    chmod 600 /home/jenkins/.ssh/authorized_keys
 
-# Jenkins slave configuration
+# Jenkins slave workspace configuration
 RUN mkdir -p /opt/jenkins-slave-workspace && \
-chown -R jenkins:jenkins /opt/jenkins-slave-workspace
+    chown -R jenkins:jenkins /opt/jenkins-slave-workspace
 
+# Expose port for SSH
 EXPOSE 22
+
+# Remove any nologin restriction
 RUN rm -rf /run/nologin
-CMD /usr/sbin/sshd -D
+
+# Set default command for the container
+CMD ["/usr/sbin/sshd", "-D"]
