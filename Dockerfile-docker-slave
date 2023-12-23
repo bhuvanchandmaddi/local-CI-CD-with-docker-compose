@@ -2,35 +2,44 @@
 
 # Use the official docker:dind image as the base
 FROM docker:dind
+
+# Create a non-root user named "jenkins"
 RUN adduser -D jenkins
 
-
-# Create a non-root user named "myuser" with UID 1000 (you can change the username and UID if needed)
-# Set appropriate permissions on the .ssh directory and authorized_keys file
+# Create .ssh directory for the user
 RUN mkdir -p /home/jenkins/.ssh 
 
 # Copy the SSH public key to the user's authorized_keys file
 # The authorized_keys file should be created inside the user's home directory
 COPY ./utilities/ssh-keys/ansible-user-key.pub /home/jenkins/.ssh/authorized_keys
 
+# Set appropriate permissions on the .ssh directory and authorized_keys file
 RUN chmod 700 /home/jenkins/.ssh && \
     chmod 600 /home/jenkins/.ssh/authorized_keys && \
     echo 'root:root' | chpasswd && \
     echo "jenkins:jenkins" | chpasswd
 
-
-# Install SSH server and configure it
+# Install SSH server, OpenJDK 17, Git, and Maven
 RUN apk update && \
     apk upgrade && \
-    apk add openssh-server && \
-    ssh-keygen -A
+    apk add openssh-server openjdk17 git maven
 
-# Install OpenJDK 11
-RUN apk add openjdk11
+# Set the JAVA_HOME environment variable to Java 17
+ENV JAVA_HOME /usr/lib/jvm/java-17-openjdk
 
-# Set the JAVA_HOME environment variable (optional but recommended)
-ENV JAVA_HOME /usr/lib/jvm/java-11-openjdk
+# Generate SSH keys for the SSH server
+RUN ssh-keygen -A
+
+# Environment variable to hold the GID for the Docker group
+ARG DOCKER_GID=999
+ENV DOCKER_GID ${DOCKER_GID}
+
+# Script to create Docker group with given GID and add jenkins user to it
+COPY set-docker-group.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/set_docker_group.sh
+
+# Run the script to adjust group settings
+RUN /usr/local/bin/set-docker-group.sh
 
 # Set the default command for the container
 CMD ["/usr/sbin/sshd", "-D"]
-
